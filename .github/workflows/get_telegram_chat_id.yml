@@ -1,0 +1,75 @@
+name: Get Telegram Chat ID (Setup Helper)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  get-chat-id:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install requests tenacity
+
+      - name: Fetch chat IDs
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import requests
+          import json
+          import os
+
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          url = f"https://api.telegram.org/bot{token}/getUpdates"
+          resp = requests.get(url, timeout=10)
+          data = resp.json()
+
+          if not data.get("ok"):
+              print(f"❌ API error: {data.get('description')}")
+              exit(1)
+
+          updates = data.get("result", [])
+          if not updates:
+              print("⚠️  No updates found.")
+              print("ACTION REQUIRED: Send a message to your bot first, then re-run this workflow.")
+              exit(0)
+
+          seen = set()
+          print("\n=== CHAT IDs FOUND ===\n")
+          for u in updates:
+              msg = u.get("message") or u.get("callback_query", {}).get("message", {}) or {}
+              chat = msg.get("chat", {})
+              cid = chat.get("id")
+              if cid and cid not in seen:
+                  seen.add(cid)
+                  print(f"Chat ID  : {cid}")
+                  print(f"Type     : {chat.get('type')}")
+                  print(f"Name     : {chat.get('title') or chat.get('first_name', '')}")
+                  print(f"Sample   : {msg.get('text', '')[:50]}")
+                  print("-" * 40)
+
+          print("\n✅ Copy the correct Chat ID above.")
+          print("Add it as GitHub Secret: TELEGRAM_CHAT_ID")
+          EOF
+
+      - name: Instructions
+        run: |
+          echo "## How to use this output" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. Find your Chat ID in the step above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Go to: **Settings → Secrets → Actions → New repository secret**" >> $GITHUB_STEP_SUMMARY
+          echo "3. Name: \`TELEGRAM_CHAT_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "4. Value: the numeric ID (e.g. \`-1001234567890\` for groups, \`987654321\` for personal)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **If no chats found:** Send \`/start\` to your bot in Telegram, then re-run this workflow." >> $GITHUB_STEP_SUMMARY
