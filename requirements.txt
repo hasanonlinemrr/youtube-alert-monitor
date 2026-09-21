@@ -1,0 +1,9 @@
+google-api-python-client==2.140.0
+youtube-transcript-api==0.6.3
+requests==2.32.3
+openai==1.51.0
+PyMuPDF==1.24.10
+python-dateutil==2.9.0
+tenacity==9.0.0
+fuzzywuzzy==0.18.0
+python-Levenshtein==0.25.1

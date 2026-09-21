@@ -1,0 +1,162 @@
+{
+  "_comment": "Keywords and patterns for two-stage video classification.",
+
+  "include_patterns": {
+    "_comment": "If ANY of these appear in title/description, mark as candidate for AI review.",
+
+    "application": [
+      "application", "apply", "form", "registration", "আবেদন", "ফর্ম", "নিবন্ধন",
+      "apply online", "application started", "application open", "form out",
+      "notification out", "recruitment", "vacancy", "নিয়োগ", "বিজ্ঞপ্তি"
+    ],
+
+    "application_soon": [
+      "application soon", "coming soon", "starting soon", "apply soon",
+      "form coming", "আসছে", "শীঘ্রই", "upcoming"
+    ],
+
+    "admit_card": [
+      "admit card", "admit", "hall ticket", "call letter",
+      "প্রবেশপত্র", "অ্যাডমিট কার্ড", "admit card out", "admit card released",
+      "admit card download"
+    ],
+
+    "result": [
+      "result", "result out", "result declared", "result released", "merit list",
+      "ফলাফল", "রেজাল্ট", "result published", "selected candidates",
+      "cut off declared", "final result", "score card"
+    ]
+  },
+
+  "exclude_patterns": {
+    "_comment": "If these appear AND no strong include signal exists, skip the video.",
+
+    "study_content": [
+      "maths", "mathematics", "reasoning", "english grammar", "gk", "general knowledge",
+      "current affairs", "mock test", "practice set", "previous year", "pyq",
+      "গণিত", "গণিতের", "রিজনিং", "ইংরেজি", "সাধারণ জ্ঞান", "মক টেস্ট",
+      "practice", "solve", "solution", "quiz"
+    ],
+
+    "preparation": [
+      "preparation", "strategy", "study plan", "how to prepare", "tips",
+      "প্রস্তুতি", "পরামর্শ", "কৌশল", "study tips", "topper"
+    ],
+
+    "coaching": [
+      "paid course", "batch", "live class", "online class", "join now",
+      "free class", "demo class", "enroll", "coaching", "পেইড", "ব্যাচ",
+      "লাইভ ক্লাস", "ক্লাস"
+    ],
+
+    "analysis": [
+      "exam analysis", "paper analysis", "paper review", "expected cutoff",
+      "cut off prediction", "পেপার বিশ্লেষণ", "পরীক্ষার বিশ্লেষণ"
+    ],
+
+    "tutorial": [
+      "how to fill", "form fill up", "how to apply", "fill kare", "form bhara",
+      "download kare", "download tutorial", "step by step tutorial",
+      "ফর্ম পূরণ", "কিভাবে আবেদন", "download করবেন"
+    ],
+
+    "motivation": [
+      "motivation", "motivational", "success story", "inspiration",
+      "অনুপ্রেরণা", "সাফল্য", "সফলতার গল্প"
+    ]
+  },
+
+  "strong_include_override": [
+    "_comment: If these exact phrases appear, override exclude patterns.",
+    "application started", "application open", "form started", "last date",
+    "admit card released", "admit card out", "result declared", "result out",
+    "আবেদন শুরু", "আবেদন শুরু হয়েছে", "ফর্ম শুরু", "প্রবেশপত্র প্রকাশ",
+    "ফলাফল প্রকাশ", "রেজাল্ট প্রকাশ"
+  ],
+
+  "event_type_rules": {
+    "_comment": "Maps keyword groups to event_type codes. First match wins.",
+    "APPLICATION_OPEN": {
+      "title_patterns": [
+        "application started", "application open", "form started", "apply now",
+        "registration started", "আবেদন শুরু", "ফর্ম শুরু", "আবেদন চলছে"
+      ],
+      "require_date_signal": false
+    },
+    "APPLICATION_OPEN_SOON": {
+      "title_patterns": [
+        "application soon", "apply soon", "coming soon", "notification out",
+        "আবেদন শীঘ্রই", "বিজ্ঞপ্তি প্রকাশ"
+      ],
+      "require_date_signal": true,
+      "_note": "Only classify as SOON if a concrete date is mentioned"
+    },
+    "ADMIT_CARD_RELEASED": {
+      "title_patterns": [
+        "admit card out", "admit card released", "admit card download",
+        "hall ticket released", "প্রবেশপত্র প্রকাশ", "অ্যাডমিট কার্ড"
+      ],
+      "require_date_signal": false
+    },
+    "RESULT_DECLARED": {
+      "title_patterns": [
+        "result out", "result declared", "result released", "merit list out",
+        "ফলাফল প্রকাশ", "রেজাল্ট আউট", "রেজাল্ট প্রকাশিত"
+      ],
+      "require_date_signal": false
+    }
+  },
+
+  "exam_name_normalizations": {
+    "_comment": "Canonical exam name mappings for deduplication. Key = normalized, values = variants.",
+    "SSC CGL": ["ssc cgl", "combined graduate level", "cgl"],
+    "SSC CHSL": ["ssc chsl", "combined higher secondary level", "chsl", "10+2"],
+    "SSC MTS": ["ssc mts", "multi tasking staff", "mts"],
+    "SSC GD": ["ssc gd", "constable gd", "ssc gd constable"],
+    "SSC CPO": ["ssc cpo", "central police organisation", "cpo", "si in cpf"],
+    "SSC Stenographer": ["ssc steno", "stenographer", "steno"],
+    "SSC JE": ["ssc je", "junior engineer", "ssc je 2"],
+    "RRB NTPC": ["rrb ntpc", "ntpc", "non technical popular categories"],
+    "RRB Group D": ["rrb group d", "railway group d", "level 1"],
+    "RRB ALP": ["rrb alp", "assistant loco pilot", "alp technician"],
+    "RRB JE": ["rrb je", "railway junior engineer"],
+    "IBPS PO": ["ibps po", "ibps probationary officer", "bank po"],
+    "IBPS Clerk": ["ibps clerk", "ibps clerical"],
+    "IBPS SO": ["ibps so", "specialist officer"],
+    "SBI PO": ["sbi po", "sbi probationary officer"],
+    "SBI Clerk": ["sbi clerk", "sbi junior associate"],
+    "WBPSC Clerkship": ["wbpsc clerkship", "wbcs clerkship", "clerkship"],
+    "WBPSC Food SI": ["food si", "food sub inspector", "wbpsc food"],
+    "WBCS": ["wbcs", "wb civil service", "west bengal civil service"],
+    "WB Police Constable": ["wb police constable", "wb constable", "wbp constable"],
+    "WB Police SI": ["wb police si", "wb sub inspector", "wbp si"],
+    "WBP Warder": ["wbp warder", "warder", "wb warder"],
+    "WBHRB": ["wbhrb", "health recruitment board", "wb health"],
+    "WBSEDCL": ["wbsedcl", "wb electricity", "wbsedcl recruitment"],
+    "NDA": ["nda", "national defence academy"],
+    "CDS": ["cds", "combined defence services"],
+    "UPSC CSE": ["upsc cse", "civil services", "upsc ias", "ias"],
+    "CRPF": ["crpf", "crpf constable", "crpf head constable"],
+    "BSF": ["bsf", "bsf constable", "bsf head constable"],
+    "CISF": ["cisf", "cisf constable"],
+    "Indian Army": ["army recruitment", "indian army", "army agniveer"],
+    "Indian Navy": ["navy recruitment", "indian navy", "navy agniveer"],
+    "Indian Air Force": ["air force recruitment", "iaf", "air force agniveer"],
+    "Post Office": ["post office", "india post", "gds", "gramin dak sevak"],
+    "LIC": ["lic", "lic ado", "lic aao", "lic hfl"]
+  },
+
+  "official_domains": [
+    "_comment": "These domains are treated as official sources for PDF/document extraction.",
+    "ssc.nic.in", "ssc.gov.in",
+    "rrbcdg.gov.in", "rrbald.gov.in", "rrbbbs.gov.in", "rrbbpl.nic.in",
+    "rrbchennai.gov.in", "rrbguwahati.gov.in", "rrbmumbai.gov.in",
+    "wbpsc.gov.in", "wbp.gov.in", "wbhrb.in", "wbsedcl.in",
+    "ibps.in", "sbi.co.in", "bankbazaar.com",
+    "upsc.gov.in", "crpf.gov.in", "bsf.nic.in",
+    "joinindianarmy.nic.in", "joinindiannavy.gov.in",
+    "indianairforce.nic.in", "agneepath.gov.in",
+    "indiapost.gov.in", "licindia.in",
+    "results.gov.in", "sarkarresult.com"
+  ]
+}

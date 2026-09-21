@@ -1,0 +1,81 @@
+{
+  "_comment": "WB YouTube Job Alert Agent — Master Settings. Edit this file to control all system behaviour.",
+
+  "schedule": {
+    "timezone": "Asia/Kolkata",
+    "monitor_times": ["06:00", "18:00"]
+  },
+
+  "modes": {
+    "bootstrap_mode": true,
+    "_bootstrap_comment": "Set true for the FIRST run only. Marks all current videos as seen WITHOUT sending alerts. Set false after the first run.",
+    "test_mode": false,
+    "_test_comment": "Set true to prepend 🧪 TEST to all Telegram messages. Use during verification."
+  },
+
+  "confirmation": {
+    "min_sources": 1,
+    "_min_sources_comment": "Minimum number of independent channels to confirm an event. 1 = alert immediately with confidence tag. 2 = wait for two sources.",
+    "high_confidence_threshold": 0.85,
+    "_confidence_comment": "AI confidence score above this value is treated as high-confidence even with a single source.",
+    "auto_send_high_confidence": true
+  },
+
+  "application_soon_days": 7,
+  "_soon_comment": "If a video says application will open in this many days or fewer, classify as APPLICATION_OPEN_SOON.",
+
+  "source_priority": {
+    "_comment": "Weights used for source display order and tie-breaking — never for factual truth.",
+    "tier_1_wb_bengali": 1.0,
+    "tier_2_bengali": 0.9,
+    "tier_3_wb_specialist": 0.8,
+    "tier_4_national_specialist": 0.7,
+    "tier_5_general_national": 0.6
+  },
+
+  "telegram": {
+    "polling_interval_minutes": 10,
+    "_polling_comment": "How often telegram_commands.yml checks for button presses. 10 min recommended for public repos, 30 min for private.",
+    "admin_chat_id": "",
+    "_admin_comment": "YOUR personal chat ID where alerts are sent. Find using get_telegram_chat_id workflow.",
+    "auto_forward_to_channel": false,
+    "public_channel_id": "",
+    "_channel_comment": "Optional: HASAN ONLINE channel ID. Set auto_forward_to_channel=true when ready to publish publicly."
+  },
+
+  "openrouter": {
+    "model": "openrouter/auto",
+    "_model_comment": "openrouter/auto selects the best available free model. You can pin a specific model here.",
+    "daily_request_budget": 45,
+    "_budget_comment": "Stop making AI calls if this many requests are used in a day (safety margin under 50/day free limit)."
+  },
+
+  "youtube": {
+    "daily_quota_budget": 8000,
+    "_quota_comment": "Warn and stop if daily quota approaches this (safety margin under 10,000/day).",
+    "max_videos_per_channel": 5,
+    "_max_videos_comment": "Only check the N most recent videos per channel per run."
+  },
+
+  "full_information": {
+    "_comment": "Toggle which fields are extracted when EXTRACT FULL INFORMATION is pressed.",
+    "dates": true,
+    "eligibility": true,
+    "age_limit": true,
+    "age_relaxation": true,
+    "fees": true,
+    "category_fees": true,
+    "vacancy": true,
+    "documents": true,
+    "photo_requirements": true,
+    "signature_requirements": true,
+    "file_formats": true,
+    "file_sizes": true,
+    "dimensions": true,
+    "application_steps": true,
+    "selection_process": true,
+    "important_instructions": true,
+    "official_links": true,
+    "notification_number": true
+  }
+}

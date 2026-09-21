@@ -1,0 +1,84 @@
+name: Monitor YouTube Channels
+
+on:
+  schedule:
+    # 06:00 AM IST = 00:30 UTC
+    - cron: "30 0 * * *"
+    # 06:00 PM IST = 12:30 UTC
+    - cron: "30 12 * * *"
+  workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: "Bootstrap mode — mark all current videos as seen, send NO alerts"
+        type: boolean
+        default: false
+        required: false
+      test_mode:
+        description: "Test mode — send 🧪 TEST alerts only"
+        type: boolean
+        default: false
+        required: false
+      dry_run:
+        description: "Dry run — classify videos but send NO Telegram messages"
+        type: boolean
+        default: false
+        required: false
+      channel_limit:
+        description: "Limit to N channels (0 = all, use small number for testing)"
+        type: number
+        default: 0
+        required: false
+
+permissions:
+  contents: write   # Needed to commit updated data/ files back to repo
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run monitor
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.bootstrap }}" = "true" ]; then
+            ARGS="$ARGS --bootstrap"
+          fi
+          if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
+            ARGS="$ARGS --test"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          if [ "${{ github.event.inputs.channel_limit }}" != "0" ] && [ "${{ github.event.inputs.channel_limit }}" != "" ]; then
+            ARGS="$ARGS --channel-limit ${{ github.event.inputs.channel_limit }}"
+          fi
+          python src/main.py $ARGS
+
+      - name: Commit updated state files
+        run: |
+          git config user.name "WB Job Alert Bot"
+          git config user.email "bot@wb-job-alert.local"
+          git add data/state.json data/events.json data/telegram_offset.json
+          # Only commit if there are actual changes
+          git diff --staged --quiet || git commit -m "chore: update state after monitor run [skip ci]"
+          git push
