@@ -1,117 +1,564 @@
 """
-build_channels_script.py — Resolves channels_raw.txt → channels.csv
-Run by the build_channels.yml workflow.
+Build and validate the final YouTube channel list.
+
+Input:
+    channels_raw.txt
+
+Outputs:
+    channels.csv
+    channels_validation.csv
+
+The builder NEVER silently removes a channel.
+
+Every input channel receives a validation status.
 """
 
+from __future__ import annotations
+
 import csv
-import sys
 import os
-import time
-import logging
-from pathlib import Path
+import sys
+from typing import Dict, List, Optional, Tuple
 
-sys.path.insert(0, str(Path(__file__).parent))
+from googleapiclient.discovery import build
 
-from youtube import build_youtube_client, resolve_channel
-from utils import ROOT_DIR, get_logger
-
-logger = get_logger("build_channels")
-
-CHANNELS_RAW = ROOT_DIR / "channels_raw.txt"
-CHANNELS_CSV = ROOT_DIR / "channels.csv"
-
-# Source priority rules: keywords in channel name → tier
-PRIORITY_RULES = [
-    # (keywords_in_name_lower, tier, weight, language, region)
-    (["west bengal", "wb", "bengali", "বাংলা", "বাংলাদেশ"], 1, 1.0, "Bengali", "WB"),
-    (["bengal", "bangla", "বাংলা"], 2, 0.9, "Bengali", "Other"),
-    (["west bengal"], 3, 0.8, "English", "WB"),
-    (["ssc", "rrb", "bank", "upsc", "railway", "police"], 4, 0.7, "English", "National"),
-]
-DEFAULT_TIER = 5
-DEFAULT_WEIGHT = 0.6
+from youtube import (
+    clean_text,
+    extract_channel_id,
+    extract_handle,
+    normalize_name,
+    resolve_channel,
+)
 
 
-def detect_priority(channel_name: str, handle: str) -> tuple[int, float, str, str]:
-    combined = (channel_name + " " + handle).lower()
-    for keywords, tier, weight, lang, region in PRIORITY_RULES:
-        if any(kw in combined for kw in keywords):
-            return tier, weight, lang, region
-    return DEFAULT_TIER, DEFAULT_WEIGHT, "English", "National"
+ROOT_DIR = os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
+RAW_FILE = os.path.join(
+    ROOT_DIR,
+    "channels_raw.txt",
+)
+
+OUTPUT_FILE = os.path.join(
+    ROOT_DIR,
+    "channels.csv",
+)
+
+VALIDATION_FILE = os.path.join(
+    ROOT_DIR,
+    "channels_validation.csv",
+)
+
+
+def parse_raw_line(
+    line: str,
+) -> Optional[Dict[str, str]]:
+    """
+    Parse one channels_raw.txt line.
+
+    Supported:
+
+        URL
+        @handle
+        UCxxxxxxxxxxxxxxxxxxxxxxxx
+
+    Optional:
+
+        NAME | URL | CHANNEL_ID
+    """
+
+    line = line.strip()
+
+    if not line:
+        return None
+
+    if line.startswith("#"):
+        return None
+
+    # ---------------------------------------------------------
+    # Structured format:
+    #
+    # NAME | URL | CHANNEL_ID
+    # ---------------------------------------------------------
+
+    if "|" in line:
+        parts = [
+            clean_text(part)
+            for part in line.split("|")
+        ]
+
+        while len(parts) < 3:
+            parts.append("")
+
+        name = parts[0]
+        url_or_handle = parts[1]
+        channel_id = parts[2]
+
+        if not url_or_handle and channel_id:
+            url_or_handle = channel_id
+
+        return {
+            "name": name,
+            "source": url_or_handle,
+            "channel_id": channel_id,
+        }
+
+    # ---------------------------------------------------------
+    # Simple one-value format.
+    # ---------------------------------------------------------
+
+    return {
+        "name": "",
+        "source": line,
+        "channel_id": (
+            extract_channel_id(line) or ""
+        ),
+    }
+
+
+def read_raw_channels() -> List[Dict[str, str]]:
+    if not os.path.exists(RAW_FILE):
+        raise FileNotFoundError(
+            f"Missing file: {RAW_FILE}"
+        )
+
+    records = []
+
+    with open(
+        RAW_FILE,
+        "r",
+        encoding="utf-8",
+    ) as f:
+        for line_number, line in enumerate(
+            f,
+            start=1,
+        ):
+            parsed = parse_raw_line(line)
+
+            if parsed is None:
+                continue
+
+            parsed["line_number"] = str(
+                line_number
+            )
+
+            records.append(parsed)
+
+    return records
+
+
+def create_youtube_client():
+    api_key = os.environ.get(
+        "YOUTUBE_API_KEY"
+    )
+
+    if not api_key:
+        raise RuntimeError(
+            "YOUTUBE_API_KEY environment variable is missing."
+        )
+
+    return build(
+        "youtube",
+        "v3",
+        developerKey=api_key,
+        cache_discovery=False,
+    )
+
+
+def validate_one(
+    youtube,
+    record: Dict[str, str],
+) -> Tuple[Dict[str, str], Optional[Dict[str, str]]]:
+    """
+    Return:
+
+        validation_row
+        clean_channel_row
+    """
+
+    source = record["source"]
+    supplied_name = record["name"]
+    supplied_id = record["channel_id"]
+
+    handle = extract_handle(source)
+
+    validation = {
+        "input_line": record["line_number"],
+        "input_name": supplied_name,
+        "input_source": source,
+        "input_channel_id": supplied_id,
+        "input_handle": handle or "",
+        "status": "UNRESOLVED",
+        "resolution_method": "",
+        "verified_name": "",
+        "verified_channel_id": "",
+        "uploads_playlist": "",
+        "custom_url": "",
+        "reason": "",
+    }
+
+    try:
+        channel = resolve_channel(
+            youtube=youtube,
+            raw_entry=source,
+            supplied_channel_id=supplied_id,
+            supplied_name=supplied_name,
+            allow_search_fallback=True,
+        )
+
+    except Exception as exc:
+        validation["status"] = "ERROR"
+        validation["reason"] = (
+            f"{type(exc).__name__}: {exc}"
+        )
+
+        return validation, None
+
+    if not channel:
+        validation["reason"] = (
+            "Could not resolve and validate channel"
+        )
+
+        return validation, None
+
+    verified_id = channel.get(
+        "channel_id",
+        "",
+    )
+
+    verified_name = channel.get(
+        "name",
+        "",
+    )
+
+    uploads_playlist = channel.get(
+        "uploads_playlist",
+        "",
+    )
+
+    custom_url = channel.get(
+        "custom_url",
+        "",
+    )
+
+    method = channel.get(
+        "resolution_method",
+        "",
+    )
+
+    # ---------------------------------------------------------
+    # Check supplied ID against verified ID.
+    # ---------------------------------------------------------
+
+    if supplied_id and supplied_id != verified_id:
+        validation["status"] = "MISMATCH"
+        validation["resolution_method"] = method
+        validation["verified_name"] = verified_name
+        validation["verified_channel_id"] = verified_id
+        validation["uploads_playlist"] = uploads_playlist
+        validation["custom_url"] = custom_url
+        validation["reason"] = (
+            "Supplied channel ID does not match "
+            "the resolved channel"
+        )
+
+        return validation, None
+
+    # ---------------------------------------------------------
+    # Successful validation.
+    # ---------------------------------------------------------
+
+    validation["status"] = "RESOLVED"
+    validation["resolution_method"] = method
+    validation["verified_name"] = verified_name
+    validation["verified_channel_id"] = verified_id
+    validation["uploads_playlist"] = uploads_playlist
+    validation["custom_url"] = custom_url
+    validation["reason"] = "Validated"
+
+    clean_row = {
+        "name": verified_name,
+        "channel_id": verified_id,
+        "handle": handle or custom_url,
+        "uploads_playlist": uploads_playlist,
+        "source": source,
+        "resolution_method": method,
+    }
+
+    return validation, clean_row
+
+
+def write_validation_csv(
+    rows: List[Dict[str, str]],
+):
+    fieldnames = [
+        "input_line",
+        "input_name",
+        "input_source",
+        "input_channel_id",
+        "input_handle",
+        "status",
+        "resolution_method",
+        "verified_name",
+        "verified_channel_id",
+        "uploads_playlist",
+        "custom_url",
+        "reason",
+    ]
+
+    with open(
+        VALIDATION_FILE,
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as f:
+
+        writer = csv.DictWriter(
+            f,
+            fieldnames=fieldnames,
+        )
+
+        writer.writeheader()
+
+        for row in rows:
+            writer.writerow(row)
+
+
+def write_channels_csv(
+    rows: List[Dict[str, str]],
+):
+    fieldnames = [
+        "name",
+        "channel_id",
+        "handle",
+        "uploads_playlist",
+        "source",
+        "resolution_method",
+    ]
+
+    with open(
+        OUTPUT_FILE,
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as f:
+
+        writer = csv.DictWriter(
+            f,
+            fieldnames=fieldnames,
+        )
+
+        writer.writeheader()
+
+        for row in rows:
+            writer.writerow(row)
+
+
+def print_summary(
+    total: int,
+    resolved: int,
+    unresolved: int,
+    mismatches: int,
+    errors: int,
+):
+    print()
+    print("=" * 70)
+    print("CHANNEL VALIDATION SUMMARY")
+    print("=" * 70)
+
+    print(f"Total input channels : {total}")
+    print(f"Resolved             : {resolved}")
+    print(f"Unresolved           : {unresolved}")
+    print(f"ID mismatches        : {mismatches}")
+    print(f"Errors               : {errors}")
+
+    print()
+
+    if unresolved == 0 and mismatches == 0 and errors == 0:
+        print(
+            "STATUS: READY FOR BOOTSTRAP"
+        )
+        print(
+            "All input channels were successfully validated."
+        )
+    else:
+        print(
+            "STATUS: DO NOT BOOTSTRAP YET"
+        )
+        print(
+            "Review channels_validation.csv first."
+        )
+
+    print()
+    print(
+        f"Clean list: {OUTPUT_FILE}"
+    )
+
+    print(
+        f"Validation report: {VALIDATION_FILE}"
+    )
+
+    print("=" * 70)
+    print()
 
 
 def main():
-    if not CHANNELS_RAW.exists():
-        logger.error(f"channels_raw.txt not found at {CHANNELS_RAW}")
-        sys.exit(1)
+    print()
+    print("=" * 70)
+    print("WB YOUTUBE JOB ALERT AGENT")
+    print("CHANNEL VALIDATION / BUILD")
+    print("=" * 70)
+    print()
 
-    # Read raw entries
-    raw_lines = CHANNELS_RAW.read_text(encoding="utf-8").splitlines()
-    entries = [
-        line.strip() for line in raw_lines
-        if line.strip() and not line.strip().startswith("#")
-    ]
+    records = read_raw_channels()
 
-    logger.info(f"Processing {len(entries)} channel entries...")
+    if not records:
+        raise RuntimeError(
+            "No channel entries found in channels_raw.txt"
+        )
 
-    try:
-        youtube = build_youtube_client()
-    except ValueError as e:
-        logger.error(str(e))
-        sys.exit(1)
+    print(
+        f"Loaded {len(records)} channel entries."
+    )
+    print()
 
-    resolved = []
-    failed = []
+    youtube = create_youtube_client()
 
-    for i, entry in enumerate(entries, 1):
-        logger.info(f"[{i}/{len(entries)}] Resolving: {entry[:60]}")
-        info = resolve_channel(youtube, entry)
+    validation_rows = []
+    clean_rows = []
 
-        if info:
-            tier, weight, lang, region = detect_priority(info["name"], info.get("handle", ""))
-            info["priority_tier"] = tier
-            info["priority_weight"] = weight
-            info["language"] = lang
-            info["region"] = region
-            info["active"] = "true"
-            info["raw_entry"] = entry
-            resolved.append(info)
-            logger.info(
-                f"  ✅ {info['name']} "
-                f"(tier={tier}, playlist={info['uploads_playlist_id']})"
+    resolved = 0
+    unresolved = 0
+    mismatches = 0
+    errors = 0
+
+    for index, record in enumerate(
+        records,
+        start=1,
+    ):
+
+        display_name = (
+            record["name"]
+            or extract_handle(record["source"])
+            or record["source"]
+        )
+
+        print(
+            f"[{index}/{len(records)}] "
+            f"Validating: {display_name}"
+        )
+
+        validation, clean = validate_one(
+            youtube,
+            record,
+        )
+
+        validation_rows.append(
+            validation
+        )
+
+        status = validation["status"]
+
+        if status == "RESOLVED":
+            resolved += 1
+
+            clean_rows.append(clean)
+
+            print(
+                f"  ✓ RESOLVED | "
+                f"{validation['verified_name']} | "
+                f"{validation['verified_channel_id']} | "
+                f"{validation['resolution_method']}"
             )
+
+        elif status == "MISMATCH":
+            mismatches += 1
+
+            print(
+                f"  ! MISMATCH | "
+                f"{validation['reason']}"
+            )
+
+        elif status == "ERROR":
+            errors += 1
+
+            print(
+                f"  ! ERROR | "
+                f"{validation['reason']}"
+            )
+
         else:
-            failed.append(entry)
-            logger.warning(f"  ❌ Could not resolve: {entry}")
+            unresolved += 1
 
-        # Polite rate limiting — YouTube API allows burst but be respectful
-        if i % 10 == 0:
-            time.sleep(2)
+            print(
+                f"  ✗ UNRESOLVED | "
+                f"{validation['reason']}"
+            )
 
-    # Write channels.csv
-    fieldnames = [
-        "channel_id", "handle", "name", "uploads_playlist_id",
-        "priority_tier", "priority_weight", "language", "region",
-        "active", "raw_entry",
-    ]
+    # Remove duplicate channel IDs.
+    unique_rows = []
+    seen_ids = set()
 
-    with open(CHANNELS_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        # Sort by priority tier (best sources first)
-        resolved.sort(key=lambda r: r["priority_tier"])
-        for row in resolved:
-            writer.writerow({k: row.get(k, "") for k in fieldnames})
+    for row in clean_rows:
+        channel_id = row["channel_id"]
 
-    logger.info(f"\n{'=' * 50}")
-    logger.info(f"✅ Resolved: {len(resolved)} channels")
-    logger.info(f"❌ Failed:   {len(failed)} channels")
-    if failed:
-        logger.info("Failed entries (check manually):")
-        for f_entry in failed:
-            logger.info(f"  - {f_entry}")
-    logger.info(f"channels.csv written to: {CHANNELS_CSV}")
+        if not channel_id:
+            continue
+
+        if channel_id in seen_ids:
+            continue
+
+        seen_ids.add(channel_id)
+        unique_rows.append(row)
+
+    if len(unique_rows) != len(clean_rows):
+        print()
+        print(
+            f"Removed "
+            f"{len(clean_rows) - len(unique_rows)} "
+            f"duplicate resolved channel(s)."
+        )
+
+    write_validation_csv(
+        validation_rows
+    )
+
+    write_channels_csv(
+        unique_rows
+    )
+
+    print_summary(
+        total=len(records),
+        resolved=resolved,
+        unresolved=unresolved,
+        mismatches=mismatches,
+        errors=errors,
+    )
+
+    # ---------------------------------------------------------
+    # IMPORTANT:
+    #
+    # We deliberately DO NOT fail the GitHub Action.
+    #
+    # The validation report must be generated even if some
+    # channels are unresolved.
+    #
+    # Once the list is clean, Bootstrap can be enabled.
+    # ---------------------------------------------------------
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(130)
+
+    except Exception as exc:
+        print()
+        print(
+            f"FATAL ERROR: {type(exc).__name__}: {exc}"
+        )
+        sys.exit(1)
