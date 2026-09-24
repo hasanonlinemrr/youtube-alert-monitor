@@ -31,21 +31,38 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: python src/build_channels_script.py
 
-      - name: Commit channels.csv
+      - name: Commit channels and validation report
         run: |
           git config user.name "WB Job Alert Bot"
           git config user.email "bot@wb-job-alert.local"
-          git add channels.csv
-          git diff --staged --quiet || git commit -m "chore: update channels.csv from channels_raw.txt"
+          git add channels.csv channels_validation.csv
+          git diff --staged --quiet || git commit -m "chore: update channels.csv and channels_validation.csv"
           git push
 
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: channel-validation-reports
+          path: |
+            channels.csv
+            channels_validation.csv
+          if-no-files-found: warn
+
       - name: Summary
+        if: always()
         run: |
-          echo "## Channel Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "## Channel Validation & Build Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f channels.csv ]; then
-            COUNT=$(tail -n +2 channels.csv | wc -l)
-            echo "✅ **$COUNT channels** resolved and saved to channels.csv" >> $GITHUB_STEP_SUMMARY
+            RESOLVED=$(tail -n +2 channels.csv | wc -l)
+            echo "✅ **$RESOLVED channels** resolved and saved to \`channels.csv\`" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ channels.csv was not created — check logs" >> $GITHUB_STEP_SUMMARY
+            echo "❌ \`channels.csv\` was not created" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f channels_validation.csv ]; then
+            TOTAL=$(tail -n +2 channels_validation.csv | wc -l)
+            UNRESOLVED=$(grep -c ",UNRESOLVED," channels_validation.csv || true)
+            echo "📊 **Total evaluated:** $TOTAL | **Unresolved:** $UNRESOLVED" >> $GITHUB_STEP_SUMMARY
+            echo "📄 Check \`channels_validation.csv\` in the repository for reasons on all unresolved channels." >> $GITHUB_STEP_SUMMARY
           fi
